@@ -2,52 +2,105 @@ import SwiftUI
 
 struct HomePageView: View {
     @StateObject private var viewModel = NewsViewModel()
-    @EnvironmentObject private var favoritesManager: FavoritesManager // 🔥 Change from @StateObject to @EnvironmentObject
-    @State private var showError = false
-
+    @State private var selectedCategory: String? = nil
+    @State private var favorites: Set<UUID> = []
+    
+    private let categories = [
+        "All": nil,
+        "Business": "business",
+        "Entertainment": "entertainment",
+        "Health": "health",
+        "Science": "science",
+        "Sports": "sports",
+        "Technology": "technology"
+    ]
+    
     var body: some View {
         NavigationView {
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    ForEach(viewModel.articles) { article in
-                        NavigationLink(destination: ArticleDetailView(article: article)) {
-                            NewsCard(
-                                article: article,
-                                isFavorite: favoritesManager.isFavorite(article),
-                                toggleFavorite: { favoritesManager.toggleFavorite(article) }
-                            )
-                        }
-                    }
-                }
-                .padding()
+            VStack {
+                categoryPicker
+                contentView
             }
-            .navigationTitle("Top U.S. Headlines")
+            .navigationTitle("Top Headlines")
             .task {
-                await viewModel.loadNews()
-            }
-            .overlay {
-                if viewModel.articles.isEmpty && viewModel.errorMessage == nil {
-                    ProgressView("Loading news...")
-                }
-            }
-            .alert(isPresented: $showError) {
-                Alert(
-                    title: Text("Error"),
-                    message: Text(viewModel.errorMessage ?? "Unknown error"),
-                    dismissButton: .default(Text("Retry")) {
-                        Task { await viewModel.loadNews() }
-                    }
-                )
-            }
-            .onChange(of: viewModel.errorMessage) { newValue in
-                showError = newValue != nil
+                await viewModel.loadNews(category: selectedCategory)
             }
         }
     }
+    
+    // MARK: - Subviews
+    
+    private var categoryPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(categories.keys.sorted(), id: \.self) { category in
+                    Button(action: {
+                        // Fix: Use flatMap to handle the double optional
+                        selectedCategory = categories[category].flatMap { $0 }
+                        Task {
+                            await viewModel.loadNews(category: selectedCategory)
+                        }
+                    }) {
+                        Text(category)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(selectedCategory == categories[category].flatMap { $0 } ?
+                                      Color.blue : Color.gray.opacity(0.2))
+                            .foregroundColor(selectedCategory == categories[category].flatMap { $0 } ?
+                                           .white : .primary)
+                            .cornerRadius(20)
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+    
+    private var contentView: some View {
+        Group {
+            if viewModel.isLoading {
+                loadingView
+            } else {
+                // Explicitly handle errorMessage as String? without unwrapping
+                switch viewModel.errorMessage {
+                case .some(let error): // error is String
+                    Text(error)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                case .none:
+                    articlesList
+                }
+            }
+        }
+    }
+    
+    private var loadingView: some View {
+        ProgressView("Loading news...")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private var articlesList: some View {
+        List(viewModel.articles) { article in
+            NavigationLink(destination: ArticleDetailView(article: article)) {
+                NewsCard(
+                    article: article,
+                    isFavorite: favorites.contains(article.id),
+                    toggleFavorite: {
+                        if favorites.contains(article.id) {
+                            favorites.remove(article.id)
+                        } else {
+                            favorites.insert(article.id)
+                        }
+                    }
+                )
+            }
+        }
+        .listStyle(.plain)
+    }
 }
 
-
-
+// MARK: - News Card
 
 struct NewsCard: View {
     let article: Article
@@ -92,17 +145,42 @@ struct NewsCard: View {
                 }
             }
             
-            // Favorite Icon
             Button(action: toggleFavorite) {
                 Image(systemName: isFavorite ? "heart.fill" : "heart")
-                    .foregroundColor(isFavorite ? .red : .gray) // 🔥 This will now stay red when favorited
+                    .foregroundColor(isFavorite ? .red : .gray)
                     .font(.title2)
             }
-            .buttonStyle(PlainButtonStyle()) // Avoids link styling interference
+            .buttonStyle(PlainButtonStyle())
         }
         .padding()
-        .background(.background)
+        .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(radius: 4)
     }
+}
+
+// MARK: - Article Row (Kept for reference)
+
+struct ArticleRow: View {
+    let article: Article
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(article.title)
+                .font(.headline)
+            if let description = article.description {
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Preview
+
+#Preview {
+    HomePageView()
 }

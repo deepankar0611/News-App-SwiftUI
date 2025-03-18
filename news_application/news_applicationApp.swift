@@ -17,7 +17,7 @@ struct NewsAppApp: App {
                         Label("Favorites", systemImage: "heart")
                     }
             }
-            .environmentObject(favoritesManager)  // Share across tabs
+            .environmentObject(favoritesManager)
         }
     }
 }
